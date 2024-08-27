@@ -1,5 +1,6 @@
 import os
 import argparse
+import fulltext
 from groq import Groq
 
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -8,8 +9,7 @@ parser = argparse.ArgumentParser(description='Summarizes a document with groq.')
 parser.add_argument('filename', help='Provide the path to a document to summarize.')
 args = parser.parse_args()
 
-with open(args.filename) as f:
-    text = f.read()
+text = fulltext.get(args.filename)
 
 chat_completion = client.chat.completions.create(
     messages=[
