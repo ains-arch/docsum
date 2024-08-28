@@ -38,5 +38,10 @@ $ export $(cat .env)
 
 Pass a file path to `docsum.py` from the command line. For example:
 ```
-$ python3 docsum.py ~/Documents/filename
+$ python3 docsum.py docs/declaration.txt
+```
+
+If you want to try a prompt injection, use the `.attack` file:
+```
+$ python3 docsum.py docs/declaration.txt.attack
 ```
