@@ -1,4 +1,4 @@
-# Document Summarizer
+# Document Summarizer ![](https://github.com/ains-arch/docsum/workflows/tests/badge.svg)
 
 `docsum.py` takes a file (of any type) as a command line argument and
 summarizes that file using the Groq API.
