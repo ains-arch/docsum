@@ -2,10 +2,9 @@ import os
 import argparse
 import fulltext
 import re
-import time
 from groq import Groq
 
-def split_document_into_chunks(text):
+def split_document_into_chunks(text, max_chunk_size=5000):
     r"""
     Split the input text into a list of paragraphs so that an LLM can process those
     paragraphs individually.
@@ -41,25 +40,24 @@ def split_document_into_chunks(text):
     
     # Remove leading/trailing newlines and spaces from each paragraph
     cleaned_paragraphs = [para.strip() for para in paragraphs if para.strip()]
+
+    chunks = []
+    current_chunk = ""
     
-    return cleaned_paragraphs
-
-def rate_limited_request(client, request_function, *args, **kwargs):
-    """
-    Wrapper function to ensure requests are rate-limited.
-    """
-    last_request_time = time.time()
-    request_interval = 60 / 30  # 60 seconds / 30 requests per minute
-
-    # Wait if necessary to stay within rate limit
-    elapsed_time = time.time() - last_request_time
-    if elapsed_time < request_interval:
-        time.sleep(request_interval - elapsed_time)
-
-    # Update the time of the last request
-    last_request_time = time.time()
+    for para in cleaned_paragraphs:
+        if len(current_chunk) + len(para) + 2 > max_chunk_size:  # +2 for potential newlines
+            chunks.append(current_chunk.strip())
+            current_chunk = para
+        else:
+            if current_chunk:
+                current_chunk += "\n\n"  # Add a separator between paragraphs
+            current_chunk += para
     
-    return request_function(*args, **kwargs)
+    if current_chunk:
+        chunks.append(current_chunk.strip())
+
+    return chunks
+
 
 if __name__ == '__main__':
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -76,30 +74,27 @@ if __name__ == '__main__':
         text = fulltext.get(args.filename)
 
     print("\n")
-    print(f"Summarizing {args.filename}")
+    print(f"DEBUG: summarizing {args.filename}")
     print("\n")
     print(f"DEBUG: length of text: {len(text)}")
     print("\n")
-    print("\n")
     print(f"DEBUG: text: {text}")
-    print("\n")
     print("\n")
 
     try:
-        response = rate_limited_request(
-            client.chat.completions.create,
-            messages=[{
-                        "role": "system",
-                        "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
-                    },
-                    {
-                        "role": "user",
-                        "content": text,
-                    }
-                ],
-            model="llama3-8b-8192"
+        response = client.chat.completions.create( messages=[ {
+                    "role": "system",
+                    "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
+                },
+                {
+                    "role": "user",
+                    "content": text,
+                }
+            ],
+            model="llama3-8b-8192",
         )
     except:
+
         # Split the document into chunks
         chunked_text = split_document_into_chunks(text)
         print(f"DEBUG: length of chunked_text: {len(chunked_text)}")
@@ -112,8 +107,7 @@ if __name__ == '__main__':
             print(f"DEBUG: chunk {i}")
             print(f"DEBUG: length of chunk: {len(chunk)}")
             print(f"DEBUG: chunk: {chunk}")
-            chat_completion = rate_limited_request(
-                client.chat.completions.create,
+            chat_completion = client.chat.completions.create(
                 messages=[
                     {
                         "role": "system",
@@ -124,7 +118,7 @@ if __name__ == '__main__':
                         "content": chunk,
                     }
                 ],
-                model="llama3-8b-8192"
+                model="llama3-8b-8192",
             )
             summarized_chunks.append(chat_completion.choices[0].message.content)
 
@@ -132,8 +126,7 @@ if __name__ == '__main__':
         summarized_document = " ".join(summarized_chunks)
 
         # Summarize the entire document again
-        response = rate_limited_request(
-            client.chat.completions.create,
+        response = client.chat.completions.create(
             messages=[
                 {
                     "role": "system",
@@ -144,8 +137,9 @@ if __name__ == '__main__':
                     "content": summarized_document,
                 }
             ],
-            model="llama3-8b-8192"
+            model="llama3-8b-8192",
         )
 
     # Output summary
+    print(f"DEBUG: response:")
     print(response.choices[0].message.content)
