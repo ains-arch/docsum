@@ -28,10 +28,10 @@ jobs:
       - name: Run Pylint
         run: |
           pip install pylint
-          pylint docsum.py
+          pylint --disable=C0301 docsum.py
       - name: Run doctests
         run: |
-          pylint --disable=C0301 docsum.py
+          python3 -m doctest docsum.py
       - name: Test declaration
         run: |
           for file in docs/*; do python3 docsum.py ${file}; done
