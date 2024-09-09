@@ -1,45 +1,48 @@
 import os
 import argparse
 import fulltext
+import re
 from groq import Groq
 
 def split_document_into_chunks(text):
-    r"""      
-    Split the input text into smaller chunks so that an LLM can process those
-    chunks individual.      
+    r"""
+    Split the input text into a list of paragraphs so that an LLM can process those
+    paragraphs individually.
+
+    Arguments:
+        text (str): The original document to split up.
+    
+    Returns:
+        split_text (list): The document as a series of strings in a list.
         
-    Arguments:          
-        text (str): The original document to split up.     
-        
-    Returns:    
-        xxx (list): The document as a series of strings in a list.             
-        
-    >>> split_document_into_chunks('This is a sentence.\n\nThis is another paragraph.')
-    ['This is a sentence.', 'This is another paragraph.']
-    >>> split_document_into_chunks('This is a sentence.\n\nThis is another paragraph.\n\nThis is yet another paragraph.')
-    ['This is a sentence.', 'This is another paragraph.', 'This is yet another paragraph.']
-    >>> split_document_into_chunks('This is a sentence.')
-    ['This is a sentence.']
+    >>> split_document_into_chunks('This is a paragraph.\n\nThis is another paragraph.')
+    ['This is a paragraph.', 'This is another paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.\n\nThis is another paragraph.\n\nThis is yet another paragraph.')
+    ['This is a paragraph.', 'This is another paragraph.', 'This is yet another paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.')
+    ['This is a paragraph.']
     >>> split_document_into_chunks('')
     []
-    >>> split_document_into_chunks('This is a sentence.\n')
-    ['This is a sentence.']
-    >>> split_document_into_chunks('This is a sentence.\n\n')
-    []
-    >>> split_document_into_chunks('This is a sentence.\n\nThis is another paragraph.\n\n')
-    ['This is a sentence.', 'This is another paragraph.']
-    >>> split_document_into_chunks('This is a sentence.\n\nThis is another paragraph.\n\nThis is yet another paragraph.\n\n')
-    ['This is a sentence.', 'This is another paragraph.', 'This is yet another paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.\n')
+    ['This is a paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.\n\n')
+    ['This is a paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.\n\nThis is another paragraph.\n\n')
+    ['This is a paragraph.', 'This is another paragraph.']
+    >>> split_document_into_chunks('This is a paragraph.\n\nThis is another paragraph.\n\nThis is yet another paragraph.\n\n')
+    ['This is a paragraph.', 'This is another paragraph.', 'This is yet another paragraph.']
     """
-    return text.split('\n\n')
+    if not text:
+        return []
 
-# TODO: edit split function to pass doctests
-# TODO: call the split document into chunks on text
-# TODO: for each paragraph in the output list call the LLM code below to
-# summarize it
-# TODO: put the summary into a new list
-# TODO: concatenate that new list into one smaller document
-# TODO; recall that the LLM code below on the new smaller document
+    # Split the document by two or more newlines
+    paragraphs = re.split(r'\n{2,}', text)
+    
+    # Remove leading/trailing newlines and spaces from each paragraph
+    cleaned_paragraphs = [para.strip() for para in paragraphs if para.strip()]
+    
+    return cleaned_paragraphs
+
 
 if __name__ == '__main__':
     client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -47,21 +50,80 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Summarizes a document with groq.')
     parser.add_argument('filename', help='Provide the path to a document to summarize.')
     args = parser.parse_args()
-    
-    # TODO: change the text variable to avoid redefining
-    text = fulltext.get(args.filename) 
 
-    chat_completion = client.chat.completions.create(
-        messages=[
-            {
-                "role": "system",
-                "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade readling level.",
-            },
-            {
-                "role": "user",
-                "content": text,
-            }
-        ],
-        model="llama3-8b-8192",
-    )
-    print(chat_completion.choices[0].message.content)
+    # Get the full text from the document
+    try:
+        with open(args.filename, 'r', encoding='utf-8') as f:
+            text = f.read()
+    except UnicodeDecodeError:
+        text = fulltext.get(args.filename)
+
+    print("\n")
+    print(f"DEBUG: length of text: {len(text)}")
+    print("\n")
+    print(f"DEBUG: text: {text}")
+    print("\n")
+    print(f"Summarizing {args.filename}")
+    print("\n")
+
+    try:
+        response = client.chat.completions.create( messages=[ {
+                    "role": "system",
+                    "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
+                },
+                {
+                    "role": "user",
+                    "content": text,
+                }
+            ],
+            model="llama3-8b-8192",
+        )
+    except:
+
+        # Split the document into chunks
+        chunked_text = split_document_into_chunks(text)
+        print(f"DEBUG: length of chunked_text: {len(chunked_text)}")
+
+        # Initialize an empty list for storing individual summaries
+        summarized_chunks = []
+
+        # Summarize each paragraph
+        for i, chunk in enumerate(chunked_text):
+            print(f"DEBUG: chunk {i}")
+            print(f"DEBUG: length of chunk: {len(chunk)}")
+            print(f"DEBUG: chunk: {chunk}")
+            chat_completion = client.chat.completions.create(
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
+                    },
+                    {
+                        "role": "user",
+                        "content": chunk,
+                    }
+                ],
+                model="llama3-8b-8192",
+            )
+            summarized_chunks.append(chat_completion.choices[0].message.content)
+
+        # Concatenate all summarized paragraphs into a smaller document
+        summarized_document = " ".join(summarized_chunks)
+
+        # Summarize the entire document again
+        response = client.chat.completions.create(
+            messages=[
+                {
+                    "role": "system",
+                    "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
+                },
+                {
+                    "role": "user",
+                    "content": summarized_document,
+                }
+            ],
+            model="llama3-8b-8192",
+        )
+
+    # Output summary
+    print(response.choices[0].message.content)
