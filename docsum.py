@@ -59,11 +59,13 @@ if __name__ == '__main__':
         text = fulltext.get(args.filename)
 
     print("\n")
+    print(f"Summarizing {args.filename}")
+    print("\n")
     print(f"DEBUG: length of text: {len(text)}")
+    print("\n")
     print("\n")
     print(f"DEBUG: text: {text}")
     print("\n")
-    print(f"Summarizing {args.filename}")
     print("\n")
 
     try:
