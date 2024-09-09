@@ -2,9 +2,10 @@ import os
 import argparse
 import fulltext
 import re
-from groq import Groq
+import groq
 from bs4 import BeautifulSoup
 import chardet
+import time
 
 def import_doc(filename):
     # Get the full text from the document
@@ -85,7 +86,7 @@ def split_document_into_chunks(text, max_chunk_size=4000):
 
     return chunks
 
-def try_response(text):
+def groq_query(input_text, delay=5):
     """
     
     
@@ -94,65 +95,68 @@ def try_response(text):
     Returns:
     """
     try:
-        summarized_document_chat = client.chat.completions.create( messages=[ {
+        final_chat = client.chat.completions.create(
+            messages=[
+                {
                     "role": "system",
                     "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
                 },
                 {
                     "role": "user",
-                    "content": text,
+                    "content": input_text,
                 }
             ],
             model="llama3-8b-8192",
         )
-        summarized_document = summarized_document_chat.choices[0].message.content
-    except:
 
-        # Split the document into chunks
-        chunked_text = split_document_into_chunks(text)
-        print("\n")
-        print(f"DEBUG: number of chunks: {len(chunked_text)}")
-        print("\n")
+    except groq.InternalServerError:
+        print("DEBUG: groq broke let's try again")
+        time.sleep(delay)
+        final_chat = groq_query(input_text)
 
-        # Initialize an empty list for storing individual summaries
-        summarized_chunks = []
+    except (groq.RateLimitError, groq.BadRequestError) as e:
+        
+        error_message = str(e)
 
-        # Summarize each paragraph
-        for i, chunk in enumerate(chunked_text):
+        if 'RMP' in error_message:
+            print(f"DEBUG: too much too quickly, waiting {delay} seconds")
+            time.sleep(delay)
+            final_chat = groq_query(input_text)
+        else:
+            # Split the document into chunks
+            chunked_text = split_document_into_chunks(input_text)
             print("\n")
-            print(f"DEBUG: chunk {i}")
-            print(f"DEBUG: length of chunk: {len(chunk)}")
-            print(f"DEBUG: chunk: {chunk}")
+            print(f"DEBUG: number of chunks: {len(chunked_text)}")
             print("\n")
-            chat_completion = client.chat.completions.create(
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
-                    },
-                    {
-                        "role": "user",
-                        "content": chunk,
-                    }
-                ],
-                model="llama3-8b-8192",
-            )
-            summarized_chunks.append(chat_completion.choices[0].message.content)
+
+            # Initialize an empty list for storing individual summaries
+            summarized_chunks = []
+
+            # Summarize each paragraph
+            for i, chunk in enumerate(chunked_text):
+                print(f"DEBUG: chunk {i}")
+                print(f"DEBUG: length of chunk: {len(chunk)}")
+                print(f"DEBUG: chunk: {chunk}")
+                print("\n")
+                chunk_chat = groq_query(chunk)
+                chunk_txt = chunk_chat.choices[0].message.content
+                print(f"DEBUG: internal response: {chunk_txt}")
+                print("\n")
+                summarized_chunks.append(chunk_txt)
+
+            # Concatenate all summarized paragraphs into a smaller document
+            summarized_document = " ".join(summarized_chunks)
             print("\n")
-            print(f"DEBUG: internal response: {chat_completion.choices[0].message.content}")
+            print(f"DEBUG: length of summarized document: {len(summarized_document)}")
+            print(f"DEBUG: summarized_document: {summarized_document}")
+            print("\n")
+            
+            final_chat = groq_query(summarized_document)
 
-        # Concatenate all summarized paragraphs into a smaller document
-        summarized_document = " ".join(summarized_chunks)
-        print("\n")
-        print(f"DEBUG: length of summarized document: {len(summarized_document)}")
-        print(f"DEBUG: summarized_document: {summarized_document}")
-        print("\n")
-    return summarized_document
-
-
+    return final_chat
 
 if __name__ == '__main__':
-    client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
+    client = groq.Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
     parser = argparse.ArgumentParser(description='Summarizes a document with groq.')
     parser.add_argument('filename', help='Provide the path to a document to summarize.')
@@ -162,42 +166,11 @@ if __name__ == '__main__':
 
     text = import_doc(args.filename)
 
-    summary = try_response(text)
-
-    try:
-        # Summarize the summary
-        response_chat = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
-                },
-                {
-                    "role": "user",
-                    "content": summary,
-                }
-            ],
-            model="llama3-8b-8192",
-        )
-    except:
-        summary2 = try_response(summary)
-        response = client.chat.completions.create(
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Summarize the input text below. Limit the summary to 1 paragraph and use a 1st grade reading level.",
-                },
-                {
-                    "role": "user",
-                    "content": summary2,
-                }
-            ],
-            model="llama3-8b-8192",
-        )
-    
-    response = response_chat.choices[0].message.content
+    summary_chat = groq_query(text)
+    summary_txt = summary_chat.choices[0].message.content
 
     # Output summary
     print("\n")
-    print(f"DEBUG: final response:", response)
+    print("DEBUG: final response:")
+    print(summary_txt)
     print("\n")
